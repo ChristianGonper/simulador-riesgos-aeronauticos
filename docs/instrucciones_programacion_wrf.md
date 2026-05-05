@@ -1,6 +1,6 @@
 # Instrucciones de programacion y trazabilidad del simulador WRF
 
-Estas instrucciones deben seguirse durante cualquier fase de implementacion del simulador: obtencion de datos WRF, diagnosticos meteorologicos, riesgos aeronauticos, mapas, rutas de vuelo, CLI, documentacion y pruebas.
+Estas instrucciones deben seguirse durante cualquier fase de implementacion.
 
 El objetivo no es solo que el codigo funcione. El proyecto debe poder ser entendido, usado y continuado por otra persona sin reconstruir mentalmente las decisiones tomadas.
 
