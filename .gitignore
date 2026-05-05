@@ -143,3 +143,5 @@ cython_debug/
 wrfout*
 data/processed/*.nc
 !data/processed/.gitkeep
+outputs/
+*.png

@@ -4,7 +4,7 @@
 
 Este documento define los pasos tecnicos y cientificos para implementar, en una fase posterior, la representacion de mapas meteorologicos y los primeros riesgos aeronauticos a partir del dataset WRF normalizado.
 
-La implementacion no debe empezar hasta que se valide la especificacion asociada en `docs/especificacion_representacion_riesgos_aeronauticos.md`.
+La implementacion no debe empezar hasta que se valide la especificacion asociada en `docs/specs/especificacion_representacion_riesgos_aeronauticos.md`.
 
 El objetivo de esta fase sera generar productos interpretables para la exposicion docente:
 
@@ -169,7 +169,7 @@ Despues se generaran mapas de riesgos:
 
 ### Paso 7. Documentar interpretacion
 
-Actualizar `docs/guia_interpretacion_mapas_riesgos.md` cuando se concreten nombres finales, umbrales y limitaciones.
+Actualizar `docs/guide/guia_interpretacion_mapas_riesgos.md` cuando se concreten nombres finales, umbrales y limitaciones.
 
 La guia debe permitir explicar en la presentacion:
 

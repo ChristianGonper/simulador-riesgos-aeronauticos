@@ -12,20 +12,35 @@ uv sync
 
 ## Uso
 
-Procesar archivos WRF:
+Procesar archivos WRF (Normalización):
 
 ```bash
-uv run simulador-wrf --input wrfout_d01_2009-12-16.nc --output data/processed/wrf_normalizado.nc
+uv run simulador-wrf normalizar --input wrfout_d01_2009-12-16.nc --output data/processed/wrf_normalizado.nc
 ```
 
-### Opciones CLI
+Generar Mapas:
+
+```bash
+uv run simulador-wrf mapas --input data/processed/wrf_normalizado.nc --output-dir outputs/maps
+```
+
+### Opciones `normalizar`
 
 - `--input`, `-i`: Archivo(s) de entrada.
-- `--output`, `-o`: Archivo de salida (por defecto: `data/processed/wrf_normalizado.nc`).
+- `--output`, `-o`: Archivo de salida.
 - `--jet-threshold`: Umbral de velocidad para detectar el jet stream (m/s).
 - `--backend`: Backend de cálculo (`auto`, `xwrf`, `xarray`).
-- `--levels`: Niveles de presión para interpolación (ej: `850 500 300`).
-- `--time-index`: Índice de tiempo específico a procesar.
+- `--levels`: Niveles de presión para interpolación.
+- `--time-index`: Índice de tiempo específico.
+
+### Opciones `mapas`
+
+- `--input`, `-i`: Dataset NetCDF normalizado.
+- `--output-dir`, `-o`: Directorio de salida para los mapas.
+- `--time-index`: Índice de tiempo a representar.
+- `--all-times`: Generar mapas para todos los tiempos.
+- `--fields/--no-fields`: Generar mapas meteorológicos generales.
+- `--risks/--no-risks`: Generar mapas de riesgos aeronáuticos.
 
 ## Desarrollo
 
