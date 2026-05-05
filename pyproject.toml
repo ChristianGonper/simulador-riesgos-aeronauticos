@@ -5,8 +5,10 @@ description = "Herramienta de procesamiento y normalización de datos meteoroló
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "cartopy>=0.25.0",
     "click>=8.3.3",
     "dask[complete]>=2026.3.0",
+    "matplotlib>=3.10.9",
     "metpy>=1.7.1",
     "netcdf4>=1.7.4",
     "numpy>=2.4.4",
