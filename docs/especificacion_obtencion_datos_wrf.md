@@ -1,4 +1,4 @@
-# Especificacion v0.1: obtencion cientifica de datos desde WRF
+# Especificacion v0.2: obtencion cientifica de datos desde WRF
 
 ## 1. Proposito de esta fase
 
@@ -30,6 +30,29 @@ Los principios cientificos de esta fase son:
 
 Esta fase debe priorizar magnitudes meteorologicas estandar, no indices complejos. Los riesgos aeronauticos como engelamiento, turbulencia, cizalladura, visibilidad o conveccion quedan fuera del alcance de esta especificacion inicial, aunque se deben conservar campos auxiliares que permitan calcularlos despues.
 
+## 2.1 Decisiones cerradas para la primera implementacion
+
+Para que la primera fase sea implementable sin decisiones ambiguas, se fijan estas convenciones:
+
+- La salida principal sera un `xarray.Dataset` normalizado y, por defecto, un NetCDF en `data/processed/wrf_normalizado.nc`.
+- La implementacion debe aceptar un archivo unico o una lista/patron de archivos `wrfout*.nc` compatibles y concatenarlos temporalmente en orden cronologico.
+- Los tiempos deben convertirse desde `Times` a una coordenada `time` interpretable por `xarray`; si la conversion temporal falla, el sistema debe conservar el texto original y registrar la limitacion.
+- Las dimensiones nativas WRF se mapearan a nombres normalizados:
+  - `Time` -> `time`;
+  - `south_north` -> `y`;
+  - `west_east` -> `x`;
+  - `bottom_top` -> `model_level`;
+  - dimensiones escalonadas `*_stag` -> dimensiones auxiliares solo durante el diagnostico.
+- Las unidades canonicas internas seran:
+  - presion en hPa para productos de analisis y niveles isobaricos;
+  - temperatura en grados Celsius para campos operativos de superficie e isobaricos;
+  - altura geopotencial en metros;
+  - viento en m s-1, con opcion documentada de exportar diagnosticos auxiliares en kt cuando sean utiles para jet stream;
+  - precipitacion en mm.
+- El primer valor de `precip_increment_mm` sera `0.0` y el atributo del campo debe indicar que se trata de una convencion tecnica, no de una observacion real.
+- Si se detectan incrementos negativos de precipitacion acumulada, por reinicios o discontinuidades de archivo, no deben corregirse silenciosamente. Deben marcarse como no disponibles o separarse por tramo temporal, registrando la decision en atributos.
+- El umbral inicial para la mascara exploratoria de jet stream sera configurable y tendra como valor por defecto 60 kt, convertido internamente a m s-1 si el campo base esta en unidades SI.
+
 ## 3. Entrada esperada
 
 La entrada principal sera uno o varios archivos NetCDF de salida WRF-ARW con patron `wrfout*.nc`. Deben admitirse tanto archivos individuales como series temporales formadas por varios archivos compatibles.
@@ -47,6 +70,8 @@ La especificacion asume una salida WRF estandar. Si un archivo no cumple esa est
 
 La gestion temporal debe permitir seleccionar un instante concreto y tambien conservar series temporales completas. Esta capacidad sera necesaria en fases posteriores para estudiar la evolucion meteorologica y para muestrear trayectorias de vuelo.
 
+Cuando la entrada sea multifichero, la validacion debe comprobar que los archivos pertenecen al mismo dominio fisico antes de combinarlos. Como minimo deben coincidir dimensiones horizontales, proyeccion, resolucion `DX`/`DY` y coordenadas `XLAT`/`XLONG` dentro de una tolerancia numerica razonable. Si hay tiempos duplicados, la implementacion debe ordenar cronologicamente y resolver duplicados de forma explicita, preferiblemente fallando con un mensaje claro salvo que se active una politica documentada.
+
 ## 4. Campos que debe producir la extraccion
 
 ### 4.1 Metadatos del dominio
@@ -61,6 +86,19 @@ El dataset normalizado debe incluir:
 - numero de niveles verticales;
 - latitud y longitud de cada punto de malla;
 - topografia del modelo.
+
+Para el archivo de prueba local `wrfout_d01_2009-12-16.nc`, la validacion documental observada con `xarray`/`netCDF4` es:
+
+- `Time`: 17 tiempos;
+- `south_north`: 120 puntos;
+- `west_east`: 99 puntos;
+- `bottom_top`: 44 niveles de masa;
+- `bottom_top_stag`: 45 niveles escalonados;
+- `DX = DY = 27000.0 m`;
+- `MAP_PROJ = 1`, compatible con proyeccion Lambert conforme en WRF;
+- `START_DATE = 2009-12-16_00:00:00`.
+
+Estos valores no deben codificarse como constantes del programa, pero sirven como prueba de integracion para comprobar que la extraccion reconoce correctamente una salida WRF real.
 
 Estos metadatos son necesarios para interpretar la escala espacial, ubicar los campos en un mapa y comparar el archivo de prueba con futuras simulaciones.
 
@@ -78,11 +116,13 @@ Para cada tiempo disponible se deben obtener:
 - Precipitacion:
   - acumulado total `RAINC + RAINNC`;
   - incremento entre tiempos consecutivos;
-  - primer incremento definido como cero o como dato no disponible, pero esta decision debe quedar documentada en los atributos del campo.
+  - primer incremento definido como `0.0`, documentando en los atributos que es una convencion tecnica de la extraccion.
 
 La presion a nivel del mar puede obtenerse mediante diagnosticos de `wrf-python` cuando este disponible. Si no lo esta, se debe usar una alternativa cientificamente documentada con `xarray`, `xWRF` o `MetPy`, evitando formulas ad hoc sin trazabilidad.
 
 En el caso del viento, debe quedar documentado si las componentes usadas son relativas a la rejilla del modelo o relativas a la Tierra. Para representaciones meteorologicas y navegacion posterior se preferiran componentes rotadas a coordenadas terrestres, por ejemplo mediante diagnosticos equivalentes a `uvmet` o `uvmet10`.
+
+La convencion de direccion de viento debe ser meteorologica: grados desde donde sopla el viento, con 0/360 grados para viento del norte y giro horario. Debe quedar indicado si la direccion procede de componentes terrestres rotadas o de componentes de rejilla.
 
 ### 4.3 Campos en niveles isobaricos
 
@@ -99,6 +139,15 @@ Para 850 hPa y 500 hPa se deben obtener:
 - componentes del viento;
 - modulo del viento.
 
+Para reforzar el analisis sinoptico pedido en clase, se recomienda que el dataset incluya tambien, cuando sea viable con las mismas variables ya procesadas:
+
+- presion a nivel del mar en superficie, util para localizar borrascas y anticiclones;
+- altura geopotencial en 850 y 500 hPa, util para identificar vaguadas, dorsales y estructura baroclina;
+- temperatura en 850 y 500 hPa, util para interpretar masas de aire e inestabilidad basica;
+- precipitacion acumulada e incremental, util para relacionar la situacion sinoptica con tiempo sensible.
+
+La deteccion automatica de frentes queda fuera de alcance, pero la extraccion debe producir los campos necesarios para que puedan interpretarse manualmente o calcularse en fases posteriores.
+
 Para 300 hPa se debe obtener:
 
 - componentes del viento;
@@ -110,6 +159,8 @@ Como referencia operativa inicial, la localizacion del jet stream puede apoyarse
 La interpolacion debe realizarse desde campos 3D usando presion total como coordenada vertical. El metodo recomendado es interpolacion vertical lineal o logaritmica en presion, siempre documentando la opcion elegida. La salida de cada nivel debe mantener la misma malla horizontal que el dominio WRF.
 
 Debe contemplarse que, sobre zonas de relieve alto, algunos niveles de presion puedan quedar por debajo de la superficie del modelo. En esos puntos la salida debe usar valores no disponibles o mascaras fisicamente justificadas, no extrapolaciones silenciosas.
+
+La interpolacion debe aplicarse solo tras desescalonar las variables que lo requieran y tras convertir la presion a unidades coherentes con los niveles solicitados. Si se usa `wrf-python`, `interplevel` realiza interpolacion lineal a un plano horizontal de presion o altura; si se usa `xWRF`/`xarray`, la implementacion debe documentar el metodo equivalente y verificar que las dimensiones finales son `time`, `level`, `y`, `x`.
 
 ### 4.4 Campos auxiliares para fases posteriores
 
@@ -138,6 +189,24 @@ Para orientar esas fases posteriores, la extraccion debe conservar la informacio
 ## 5. Producto normalizado
 
 El resultado esperado es un dataset etiquetado, no una coleccion informal de arrays. La estructura recomendada es compatible con `xarray.Dataset`.
+
+### 5.1 Variables canonicas minimas
+
+La primera implementacion debe intentar producir, como minimo, estas variables con nombres estables:
+
+- `slp_hpa`: presion reducida al nivel del mar.
+- `t2_c`: temperatura a 2 m.
+- `u10_ms`, `v10_ms`: componentes del viento a 10 m.
+- `wind10_speed_ms`, `wind10_dir_deg`: modulo y direccion meteorologica del viento a 10 m.
+- `precip_total_mm`, `precip_increment_mm`: precipitacion total acumulada e incremento temporal.
+- `geopotential_height_m`: altura geopotencial en niveles isobaricos.
+- `temperature_c`: temperatura en niveles isobaricos.
+- `u_ms`, `v_ms`: componentes de viento en niveles isobaricos.
+- `wind_speed_ms`: modulo del viento en niveles isobaricos.
+- `jet_stream_mask`: mascara booleana en 300 hPa basada en umbral configurable de viento.
+- `pressure_3d_hpa`, `temperature_3d_c`, `geopotential_height_3d_m`: campos auxiliares 3D basicos cuando el coste de almacenamiento lo permita.
+
+Si una variable no puede calcularse por ausencia de dependencia o variable fuente, el sistema debe fallar en las variables obligatorias y registrar como no disponible solo las variables auxiliares no esenciales.
 
 Las dimensiones logicas deben ser:
 
@@ -192,6 +261,14 @@ La implementacion posterior debe usar `uv` para gestionar dependencias y entorno
 
 La especificacion no obliga a que todas las librerias se usen simultaneamente. Obliga a que el resultado cientifico sea equivalente y a que las decisiones de calculo queden documentadas.
 
+La arquitectura de implementacion debe ocultar las diferencias entre librerias detras de una capa pequena de diagnosticos. En la practica:
+
+- Ruta preferente: `wrf-python` para `getvar`, `interplevel`, `destagger`, `latlon_coords`, `uvmet` y `uvmet10` cuando instale correctamente.
+- Ruta alternativa: `xarray` + `xWRF` para postprocesado CF, diagnosticos basicos y vientos relativos a la Tierra cuando `wrf-python` no sea viable.
+- Ruta auxiliar: `MetPy` solo para calculos meteorologicos puntuales con unidades, evitando duplicar funciones que WRF o xWRF ya resuelven.
+
+La documentacion consultada indica que `xarray.open_mfdataset` es la opcion natural para abrir multiples NetCDF y que `to_netcdf` permite controlar codificacion, compresion y valores de relleno. Tambien indica que `xWRF` proporciona `.xwrf.postprocess()` para renombrar dimensiones/variables hacia convenciones CF, convertir unidades, decodificar tiempos, incluir coordenadas de proyeccion y calcular variables diagnosticas esenciales cuando los campos fuente estan disponibles.
+
 ## 7. Validaciones cientificas minimas
 
 Antes de aceptar una extraccion como valida, deben comprobarse los siguientes puntos:
@@ -209,6 +286,14 @@ Antes de aceptar una extraccion como valida, deben comprobarse los siguientes pu
 - Las unidades finales son explicitas y coherentes.
 - Los campos derivados no contienen valores absurdos evidentes, como temperaturas fisicamente imposibles, presiones negativas o vientos no numericos.
 
+Tambien deben comprobarse aspectos de integridad practica:
+
+- La seleccion de un unico `time_index` produce el mismo resultado que seleccionar ese tiempo desde la serie completa, salvo diferencias de metadatos esperables.
+- La salida NetCDF se puede reabrir con `xarray.open_dataset`.
+- Las coordenadas `lat` y `lon` tienen dimensiones compatibles con `y`, `x`.
+- Las variables booleanas, como `jet_stream_mask`, conservan un atributo con el umbral usado y las unidades del viento base.
+- Las variables exportadas usan valores no disponibles compatibles con NetCDF y no mezclan `NaN` con codificaciones enteras sin `_FillValue`.
+
 Estas comprobaciones no sustituyen al analisis meteorologico, pero reducen el riesgo de representar campos matematicamente mal interpretados.
 
 ## 8. Criterios de aceptacion
@@ -223,6 +308,15 @@ La fase de obtencion de datos se considerara correctamente especificada e implem
 - conservar campos auxiliares 3D para fases posteriores;
 - exportar o mantener el resultado como dataset con metadatos;
 - fallar de forma explicita si el archivo no contiene las variables necesarias.
+
+Para esta primera fase, la aceptacion no exige:
+
+- calcular automaticamente riesgos aeronauticos;
+- decidir rutas entre aeropuertos;
+- detectar frentes de forma automatica;
+- construir mapas finales interactivos.
+
+Si se generan graficos durante el desarrollo, deben considerarse herramientas de verificacion, no producto obligatorio de esta fase.
 
 ## 9. Flujo conceptual de procesado
 
@@ -257,8 +351,8 @@ Estos elementos dependen de una extraccion fiable y deberan especificarse en fas
 
 ## 11. Referencias tecnicas
 
-- `wrf-python`: documentacion de `getvar`, diagnosticos WRF e interpolacion vertical con `interplevel`.
-- `xarray`: modelo de datos basado en `Dataset`, dimensiones etiquetadas, coordenadas y exportacion NetCDF.
-- `xWRF`: postprocesado de salidas WRF integrado con `xarray`.
+- `wrf-python`: documentacion de `getvar`, diagnosticos WRF e interpolacion vertical con `interplevel` (`https://wrf-python.readthedocs.io/en/main/basic_usage.html` y `https://wrf-python.readthedocs.io/en/main/user_api/generated/wrf.interplevel.html`).
+- `xarray`: modelo de datos basado en `Dataset`, dimensiones etiquetadas, apertura multifichero con `open_mfdataset`, coordenadas y exportacion NetCDF con `to_netcdf` (`https://docs.xarray.dev/`).
+- `xWRF`: postprocesado de salidas WRF integrado con `xarray`, especialmente `.xwrf.postprocess()` (`https://xwrf.readthedocs.io/en/latest/reference/generated/xarray.Dataset.xwrf.postprocess.html`).
 - `MetPy`: calculos meteorologicos con unidades y compatibilidad con `xarray`.
 - Documentacion docente del proyecto en `docs/Presentacion_tarea`, especialmente la transcripcion de clase sobre campos a representar y objetivo del simulador.
