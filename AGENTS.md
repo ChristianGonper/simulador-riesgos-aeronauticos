@@ -5,4 +5,4 @@ Usar el mcp de context7 para acceder a la documentación actualizada de librerí
 Usar búsqueda web directa para encontrar información.
 Tienes libertad para usar esas herramientas siempre que lo consideres necesario.
 
-Documentar tanto el código como la parte científica, decisiones de meteorología, etc. Usar preferentemente Markdown.
+Más detalles sobre convenciones del repo en: docs/instrucciones_programacion_wrf.md
