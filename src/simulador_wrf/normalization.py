@@ -5,7 +5,8 @@ from simulador_wrf.diagnostics import (
     calculate_precip_increment, 
     calculate_surface_diagnostics,
     interpolate_to_pressure,
-    detect_jet_stream
+    detect_jet_stream,
+    add_aviation_risk_fields
 )
 from simulador_wrf.backends import get_wrf_backend
 
@@ -59,10 +60,18 @@ def process_wrf_dataset(ds: xr.Dataset, jet_threshold: float = 30.0, levels: lis
     if "wind_speed_ms" in ds and "pressure_hpa" in ds:
         ds["wind_speed_isobaric_ms"] = interpolate_to_pressure(ds, "wind_speed_ms", levels)
         
+        # También interpolamos componentes para cizalladura y otros diagnósticos
+        if "u_ms" in ds and "v_ms" in ds:
+            ds["u_isobaric_ms"] = interpolate_to_pressure(ds, "u_ms", levels)
+            ds["v_isobaric_ms"] = interpolate_to_pressure(ds, "v_ms", levels)
+        
         # 5. Jet stream en 300 hPa
         if 300 in ds.wind_speed_isobaric_ms.level_hpa.values:
             wind_300 = ds.wind_speed_isobaric_ms.sel(level_hpa=300)
             ds["jet_stream_mask"] = detect_jet_stream(wind_300, threshold=jet_threshold)
+
+    # 6. Campos de riesgo aeronáutico
+    ds = add_aviation_risk_fields(ds)
     
     return ds
 
