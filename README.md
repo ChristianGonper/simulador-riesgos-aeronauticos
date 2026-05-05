@@ -24,6 +24,12 @@ Generar Mapas:
 uv run simulador-wrf mapas --input data/processed/wrf_normalizado.nc --output-dir outputs/maps
 ```
 
+Análisis de Rutas:
+
+```bash
+uv run simulador-wrf ruta --input data/processed/wrf_normalizado.nc --origin MAD --dest BCN --level 300
+```
+
 ### Opciones `normalizar`
 
 - `--input`, `-i`: Archivo(s) de entrada.
@@ -41,6 +47,15 @@ uv run simulador-wrf mapas --input data/processed/wrf_normalizado.nc --output-di
 - `--all-times`: Generar mapas para todos los tiempos.
 - `--fields/--no-fields`: Generar mapas meteorológicos generales.
 - `--risks/--no-risks`: Generar mapas de riesgos aeronáuticos.
+
+### Opciones `ruta`
+
+- `--input`, `-i`: Dataset NetCDF normalizado.
+- `--origin`, `-src`: Código ICAO/IATA del aeropuerto de origen.
+- `--dest`, `-dst`: Código ICAO/IATA del aeropuerto de destino.
+- `--level`, `-l`: Nivel de presión para la ruta (hPa). Por defecto 300.
+- `--n-points`, `-n`: Número de puntos en la ruta. Por defecto 50.
+- `--output-dir`, `-o`: Directorio de salida para los resultados de la ruta.
 
 ## Desarrollo
 
