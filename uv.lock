@@ -1273,6 +1273,7 @@ dependencies = [
     { name = "metpy" },
     { name = "netcdf4" },
     { name = "numpy" },
+    { name = "pandas" },
     { name = "xarray" },
     { name = "xwrf" },
 ]
@@ -1292,6 +1293,7 @@ requires-dist = [
     { name = "metpy", specifier = ">=1.7.1" },
     { name = "netcdf4", specifier = ">=1.7.4" },
     { name = "numpy", specifier = ">=2.4.4" },
+    { name = "pandas", specifier = ">=3.0.2" },
     { name = "xarray", specifier = ">=2026.4.0" },
     { name = "xwrf", specifier = ">=0.0.5" },
 ]
