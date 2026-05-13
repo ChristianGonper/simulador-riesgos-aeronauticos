@@ -2,6 +2,8 @@ import pytest
 import xarray as xr
 import numpy as np
 import pandas as pd
+import matplotlib
+matplotlib.use('Agg')
 
 @pytest.fixture
 def synthetic_wrf_dataset():

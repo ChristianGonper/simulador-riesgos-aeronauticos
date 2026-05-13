@@ -24,7 +24,7 @@ def test_cli_execution(synthetic_wrf_dataset, tmp_path):
     assert "t2_c" in ds_out
     assert "pressure_hpa" in ds_out
     assert "jet_stream_mask" in ds_out
-    assert ds_out.dims["time"] == 3
+    assert ds_out.sizes["time"] == 3
 
 def test_map_generation(synthetic_wrf_dataset, tmp_path):
     """Prueba la generación de mapas desde la CLI."""
