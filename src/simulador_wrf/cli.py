@@ -70,27 +70,43 @@ def mapas(input, output_dir, time_index, all_times, fields, risks):
             logger.info(f"Generando mapas para el paso de tiempo {t_idx}...")
             
             if fields:
-                # Mapas generales
+                # 1. Mapas de superficie
                 if "slp_hpa" in ds:
                     plot_scalar_map(ds, "slp_hpa", t_idx, out_path / f"slp_t{t_idx}.png", cmap="RdBu_r")
                 if "t2_c" in ds:
                     plot_scalar_map(ds, "t2_c", t_idx, out_path / f"t2_t{t_idx}.png", cmap="coolwarm")
                 if "precip_increment_mm" in ds:
                     plot_scalar_map(ds, "precip_increment_mm", t_idx, out_path / f"precip_t{t_idx}.png", cmap="YlGnBu")
-                
-                # Vientos
                 if "wind10_speed_ms" in ds:
                     plot_wind_map(ds, "u10_ms", "v10_ms", "wind10_speed_ms", t_idx, out_path / f"wind10_t{t_idx}.png")
                 
-                # Niveles isobaricos (850, 500)
-                if "gh_isobaric_m" in ds:
-                    for lev in [850, 500]:
-                        if lev in ds.level_hpa:
-                            ds_lev = ds.sel(level_hpa=lev)
-                            plot_scalar_map(ds_lev, "gh_isobaric_m", t_idx, out_path / f"gh{lev}_t{t_idx}.png", cmap="terrain")
+                # 2. Mapas en niveles de presión (850, 500, 300)
+                for lev in [850, 500, 300]:
+                    if "level_hpa" in ds and lev in ds.level_hpa:
+                        ds_lev = ds.sel(level_hpa=lev)
+                        
+                        # Geopotencial y Temperatura (850, 500)
+                        if lev in [850, 500]:
+                            if "gh_isobaric_m" in ds:
+                                plot_scalar_map(ds_lev, "gh_isobaric_m", t_idx, out_path / f"gh{lev}_t{t_idx}.png", cmap="terrain")
+                            if "t_isobaric_c" in ds:
+                                plot_scalar_map(ds_lev, "t_isobaric_c", t_idx, out_path / f"t{lev}_t{t_idx}.png", cmap="coolwarm")
+                        
+                        # Viento en altura (300)
+                        if lev == 300 and "wind_speed_isobaric_ms" in ds:
+                            plot_wind_map(ds_lev, "u_isobaric_ms", "v_isobaric_ms", "wind_speed_isobaric_ms", t_idx, out_path / f"wind300_t{t_idx}.png")
+
+                # 3. Diagnósticos estructurales (exploratorios)
+                struct_vars = [
+                    "low_centers_mask", "high_centers_mask", 
+                    "trough_ridge_index_500", "t_gradient_850_index"
+                ]
+                for sv in struct_vars:
+                    if sv in ds:
+                        plot_risk_map(ds, sv, t_idx, out_path / f"struct_{sv}_t{t_idx}.png")
 
             if risks:
-                # Riesgos
+                # 4. Riesgos aeronáuticos
                 risk_vars = [
                     "wind_shear_10m_850_ms", "icing_mask", "turbulence_index", 
                     "convection_proxy", "jet_stream_mask"
@@ -173,6 +189,50 @@ def ruta(input, origin, dest, level, n_points, time_index, output_dir):
         logger.error(f"Error procesando ruta: {e}")
         import traceback
         logger.error(traceback.format_exc())
+        raise click.Abort()
+
+@main.command()
+@click.option("--input", "-i", required=True, help="Dataset NetCDF normalizado.")
+@click.option("--lat", type=float, help="Latitud del punto.")
+@click.option("--lon", type=float, help="Longitud del punto.")
+@click.option("--airport", "-ap", help="Código ICAO/IATA del aeropuerto.")
+@click.option("--time-index", "-t", type=int, default=0, help="Índice de tiempo.")
+@click.option("--output", "-o", default="outputs/perfil_viento.png", help="Archivo de salida.")
+def perfil(input, lat, lon, airport, time_index, output):
+    """Genera un hodógrafo de viento (perfil vertical) en una ubicación."""
+    import xarray as xr
+    from pathlib import Path
+    from simulador_wrf.visualization import plot_hodograph
+    from simulador_wrf.airports import resolve_airport
+    
+    try:
+        ds = xr.open_dataset(input)
+        
+        target_lat, target_lon = lat, lon
+        
+        if airport:
+            ap = resolve_airport(airport)
+            if ap:
+                target_lat, target_lon = ap.latitude, ap.longitude
+                logger.info(f"Usando coordenadas de {ap.name}: {target_lat}, {target_lon}")
+            else:
+                logger.error(f"Aeropuerto {airport} no encontrado.")
+                raise click.Abort()
+        
+        if target_lat is None or target_lon is None:
+            logger.error("Debe proporcionar --lat/--lon o --airport.")
+            raise click.Abort()
+            
+        out_path = Path(output)
+        res = plot_hodograph(ds, target_lat, target_lon, time_index, out_path)
+        
+        if res:
+            logger.info(f"Hodógrafo generado exitosamente en {output}")
+        else:
+            logger.error("No se pudo generar el hodógrafo.")
+            
+    except Exception as e:
+        logger.error(f"Error generando perfil: {e}")
         raise click.Abort()
 
 if __name__ == "__main__":
