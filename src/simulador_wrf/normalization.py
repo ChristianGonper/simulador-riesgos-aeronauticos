@@ -6,9 +6,15 @@ from simulador_wrf.diagnostics import (
     calculate_surface_diagnostics,
     interpolate_to_pressure,
     detect_jet_stream,
-    add_aviation_risk_fields
+    add_aviation_risk_fields,
+    detect_pressure_centers,
+    detect_troughs_ridges,
+    calculate_temperature_gradient
 )
 from simulador_wrf.backends import get_wrf_backend
+import logging
+
+logger = logging.getLogger(__name__)
 
 def process_wrf_dataset(ds: xr.Dataset, jet_threshold: float = 30.0, levels: list = None, backend_name: str = "auto") -> xr.Dataset:
     """
@@ -49,6 +55,23 @@ def process_wrf_dataset(ds: xr.Dataset, jet_threshold: float = 30.0, levels: lis
             ds["u_ms"] = u_destag
             ds["v_ms"] = v_destag
             ds["wind_speed_ms"] = (ds.u_ms**2 + ds.v_ms**2)**0.5
+            
+            # Trazabilidad de referencia de viento (Grid-Relative)
+            long_names = {
+                "u_ms": "U-Component of Wind (Grid-Relative)",
+                "v_ms": "V-Component of Wind (Grid-Relative)",
+                "wind_speed_ms": "Wind Speed (Grid-Relative)"
+            }
+            for var in ["u_ms", "v_ms", "wind_speed_ms"]:
+                ds[var].attrs.update({
+                    "long_name": long_names[var],
+                    "wind_reference": "grid_relative",
+                    "units": "m s-1",
+                    "method": "Desescalonamiento de rejilla Arakawa-C a rejilla de masa",
+                    "source_variables": "U, V",
+                    "scientific_interpretation": "Componentes de viento relativos a la orientación de la rejilla del modelo.",
+                    "limitations": "No rotado a coordenadas geográficas (Earth-Relative)."
+                })
     
     # 4. Interpolación a niveles isobaricos
     if "temperature_c" in ds and "pressure_hpa" in ds:
@@ -59,11 +82,35 @@ def process_wrf_dataset(ds: xr.Dataset, jet_threshold: float = 30.0, levels: lis
 
     if "wind_speed_ms" in ds and "pressure_hpa" in ds:
         ds["wind_speed_isobaric_ms"] = interpolate_to_pressure(ds, "wind_speed_ms", levels)
+        ds["wind_speed_isobaric_ms"].attrs.update({
+            "long_name": "Wind Speed at Pressure Levels",
+            "units": "m s-1",
+            "wind_reference": "grid_relative",
+            "method": "Interpolación log-lineal desde niveles de modelo a niveles de presión",
+            "source_variables": "wind_speed_ms, pressure_hpa",
+            "scientific_interpretation": "Magnitud del viento en niveles isobaricos estándar.",
+            "limitations": "Precisión dependiente de la resolución vertical del modelo original."
+        })
         
         # También interpolamos componentes para cizalladura y otros diagnósticos
         if "u_ms" in ds and "v_ms" in ds:
             ds["u_isobaric_ms"] = interpolate_to_pressure(ds, "u_ms", levels)
             ds["v_isobaric_ms"] = interpolate_to_pressure(ds, "v_ms", levels)
+            
+            ds["u_isobaric_ms"].attrs.update({
+                "long_name": "U-Component at Pressure Levels",
+                "units": "m s-1",
+                "wind_reference": "grid_relative",
+                "method": "Interpolación log-lineal desde niveles de modelo a niveles de presión",
+                "source_variables": "u_ms, pressure_hpa"
+            })
+            ds["v_isobaric_ms"].attrs.update({
+                "long_name": "V-Component at Pressure Levels",
+                "units": "m s-1",
+                "wind_reference": "grid_relative",
+                "method": "Interpolación log-lineal desde niveles de modelo a niveles de presión",
+                "source_variables": "v_ms, pressure_hpa"
+            })
         
         # 5. Jet stream en 300 hPa
         if 300 in ds.wind_speed_isobaric_ms.level_hpa.values:
@@ -72,6 +119,12 @@ def process_wrf_dataset(ds: xr.Dataset, jet_threshold: float = 30.0, levels: lis
 
     # 6. Campos de riesgo aeronáutico
     ds = add_aviation_risk_fields(ds)
+    
+    # 7. Diagnósticos estructurales (exploratorios)
+    logger.info("Calculando diagnósticos estructurales exploratorios...")
+    ds = detect_pressure_centers(ds)
+    ds = detect_troughs_ridges(ds, level=500.0)
+    ds = calculate_temperature_gradient(ds, level=850.0)
     
     return ds
 
@@ -86,6 +139,10 @@ def export_dataset(ds: xr.Dataset, output_path: str):
     encoding = {}
     for var in ds.data_vars:
         encoding[var] = {"zlib": True, "complevel": 4}
-        
+
+    # Limpiar encoding de dimensiones ilimitadas que ya no existen (p. ej. 'Time' renombrado a 'time')
+    if 'unlimited_dims' in ds.encoding:
+        ds.encoding['unlimited_dims'] = {d for d in ds.encoding['unlimited_dims'] if d in ds.dims}
+
     ds.to_netcdf(output_path, encoding=encoding)
     print(f"Dataset exportado exitosamente a {output_path}")
