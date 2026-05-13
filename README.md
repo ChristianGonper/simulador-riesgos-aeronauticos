@@ -1,6 +1,13 @@
 # Simulador WRF
 
-Herramienta para la obtención, validación, diagnóstico y normalización de datos procedentes del modelo meteorológico WRF.
+Herramienta docente para analizar salidas del modelo WRF, representar la situacion meteorologica general y evaluar riesgos meteorologicos/aeronauticos de forma exploratoria.
+
+El proyecto se organiza en dos fases:
+
+1. Representacion meteorologica: superficie, 850 hPa, 500 hPa y 300 hPa.
+2. Riesgos y rutas: cizalladura, engelamiento, turbulencia, conveccion, visibilidad si esta disponible y condiciones a lo largo de una ruta entre aeropuertos.
+
+La documentacion viva esta en [`docs/README.md`](docs/README.md).
 
 ## Instalación
 
@@ -12,19 +19,19 @@ uv sync
 
 ## Uso
 
-Procesar archivos WRF (Normalización):
+Procesar archivos WRF:
 
 ```bash
 uv run simulador-wrf normalizar --input wrfout_d01_2009-12-16.nc --output data/processed/wrf_normalizado.nc
 ```
 
-Generar Mapas:
+Generar mapas:
 
 ```bash
 uv run simulador-wrf mapas --input data/processed/wrf_normalizado.nc --output-dir outputs/maps
 ```
 
-Análisis de Rutas:
+Analizar una ruta:
 
 ```bash
 uv run simulador-wrf ruta --input data/processed/wrf_normalizado.nc --origin MAD --dest BCN --level 300
@@ -70,3 +77,12 @@ Linting:
 ```bash
 uv run ruff check .
 ```
+
+## Documentacion
+
+- Estado actual: [`docs/estado_actual.md`](docs/estado_actual.md)
+- Pendientes de correccion: [`docs/pendientes_correccion.md`](docs/pendientes_correccion.md)
+- Plan tecnico activo: [`docs/plans/plan_codigo_deteccion_visualizacion.md`](docs/plans/plan_codigo_deteccion_visualizacion.md)
+- Guia de interpretacion: [`docs/guide/guia_interpretacion_mapas_riesgos.md`](docs/guide/guia_interpretacion_mapas_riesgos.md)
+
+Los productos de riesgo son docentes y exploratorios. No deben usarse para navegacion real.

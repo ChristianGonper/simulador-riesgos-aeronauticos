@@ -6,6 +6,8 @@ Cada mapa representa un tiempo valido del modelo WRF normalizado. El titulo indi
 
 Los mapas son herramientas de analisis meteorologico. No sustituyen una prediccion operacional ni certifican que una ruta de vuelo sea segura.
 
+Un mapa entregable debe permitir explicar que campo se representa, de que variables WRF procede, que unidad tiene, que metodo se ha usado y que limitaciones fisicas conserva.
+
 ## 2. Analisis meteorologico general
 
 La presion reducida al nivel del mar ayuda a localizar borrascas, anticiclones y gradientes baricos. Un gradiente intenso suele relacionarse con viento fuerte en superficie.
@@ -15,6 +17,10 @@ La temperatura a 2 m muestra masas de aire frias o calidas cerca de superficie. 
 La precipitacion incremental muestra lluvia o nieve acumulada entre dos salidas consecutivas del modelo. No debe confundirse con precipitacion total acumulada desde el inicio de la simulacion.
 
 En 850 hPa se interpretan masas de aire de baja troposfera y advecciones. En 500 hPa se localizan vaguadas, dorsales y aire frio en altura. En 300 hPa se analiza el jet stream mediante viento fuerte.
+
+Las vaguadas y dorsales se interpretan principalmente en el geopotencial de 500 hPa. Los ciclones y borrascas se identifican con minimos de presion reducida al nivel del mar, pero conviene contrastarlos con viento, precipitacion y estructura vertical.
+
+Las zonas baroclinas se infieren a partir de gradientes de temperatura, especialmente en 850 hPa o superficie. Un gradiente intenso ayuda a localizar posibles frentes, aunque no equivale por si solo a una deteccion frontal operacional.
 
 ## 3. Riesgos aeronauticos exploratorios
 
@@ -28,10 +34,14 @@ La conveccion se aproxima inicialmente con precipitacion incremental intensa. Es
 
 La visibilidad solo se representa si el WRF contiene un diagnostico especifico como `AFWA_VIS`. Si no existe, no se estima artificialmente para evitar conclusiones poco defendibles.
 
+El jet stream se interpreta mejor con viento a 300 hPa. La mascara por umbral senala zonas de viento intenso, pero el eje del jet y su continuidad deben interpretarse con el mapa completo de viento.
+
+Un hodografo puede ayudar a explicar cambios de viento con la altura en un aeropuerto o punto de ruta. Si se implementa, debe indicar niveles, unidades y si el viento esta rotado a coordenadas terrestres o es relativo a la rejilla.
+
 ## 4. Limitaciones importantes
 
 Los mapas de riesgo son exploratorios. Los umbrales usados son criterios de analisis docente, no limites operacionales universales.
 
-La deteccion automatica de frentes queda fuera de esta fase. Los mapas de presion, temperatura, viento y precipitacion proporcionan contexto para interpretarlos manualmente.
+La deteccion automatica de frentes, vaguadas, dorsales, borrascas y zonas de viento es un objetivo de mejora. Mientras los diagnosticos sean exploratorios, deben presentarse como ayuda al analisis y no como clasificacion operacional cerrada.
 
-La seleccion de aeropuertos y rutas se abordara despues, cuando los campos y riesgos ya puedan representarse y explicarse sobre el dominio completo.
+Las rutas entre aeropuertos resumen condiciones a lo largo de una trayectoria. No sustituyen el analisis general de la situacion: primero se interpreta el dominio completo y despues se estudia el vuelo concreto.

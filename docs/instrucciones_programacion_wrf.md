@@ -38,11 +38,12 @@ El objetivo no es solo que el codigo funcione. El proyecto debe poder ser entend
 - Registrar en Markdown las decisiones relevantes encontradas durante la implementacion.
 - Si una libreria impone una convencion concreta, documentarla junto al enlace o referencia usada.
 - Actualizar la especificacion o el plan cuando la implementacion obligue a cambiar una decision.
-- Cada fase nueva debe tener, antes o junto a su implementacion:
-  - una especificacion en `docs/specs/`;
-  - un plan de implementacion en `docs/plans/`;
-  - si procede, una guia de interpretacion o uso en `docs/guide/`;
-  - un reporte final de implementacion o decisiones cuando la fase se cierre.
+- Cada fase nueva debe actualizar la documentacion viva antes o junto a su implementacion:
+  - estado y alcance en `docs/estado_actual.md` cuando cambie lo que el simulador puede hacer;
+  - pendientes en `docs/pendientes_correccion.md` cuando aparezcan huecos nuevos;
+  - plan activo en `docs/plans/` si hay trabajo de codigo por ejecutar;
+  - guia en `docs/guide/` si cambia la interpretacion fisica o el uso.
+- Los specs, reports, reviews y planes cerrados deben archivarse en `docs/archive/` para no duplicar informacion viva.
 - Las referencias internas entre documentos deben apuntar a la ruta real del archivo. Si se mueve un documento, hay que actualizar todos los enlaces relacionados.
 - El README debe mantenerse como puerta de entrada para el usuario:
   - instalacion con `uv`;
