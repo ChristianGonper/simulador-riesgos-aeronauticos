@@ -87,11 +87,14 @@ def sample_wrf_at_points(ds: xr.Dataset, points: List[Tuple[float, float, float]
     
     route_data = []
     
-    # Variables de superficie/2D
+    # Variables de superficie/2D y diagnósticos globales
     vars_2d = [
         "t2_c", "wind10_speed_ms", "wind10_dir_deg", 
         "precip_increment_mm", "slp_hpa", "visibility_m",
-        "wind_shear_10m_850_ms", "icing_mask", "convection_proxy", "turbulence_index"
+        "wind_shear_10m_850_ms", "icing_mask", "convection_proxy", 
+        "turbulence_index", "jet_stream_mask",
+        "low_centers_mask", "high_centers_mask", 
+        "trough_ridge_index_500", "t_gradient_850_index"
     ]
     
     # Variables isobaricas

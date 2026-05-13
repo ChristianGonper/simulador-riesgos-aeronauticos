@@ -4,8 +4,10 @@ Herramienta docente para analizar salidas del modelo WRF, representar la situaci
 
 El proyecto se organiza en dos fases:
 
-1. Representacion meteorologica: superficie, 850 hPa, 500 hPa y 300 hPa.
-2. Riesgos y rutas: cizalladura, engelamiento, turbulencia, conveccion, visibilidad si esta disponible y condiciones a lo largo de una ruta entre aeropuertos.
+1. **Representación Meteorológica Completa**: Mapas de superficie (SLP, T2, Viento, Precipitación) y niveles aeronáuticos (850, 500, 300 hPa) con geopotencial, temperatura y viento.
+2. **Diagnósticos Estructurales**: Detección programática de centros de presión (A/B), ejes de vaguada/dorsal en 500hPa y gradientes térmicos (zonas baroclínicas) en 850hPa.
+3. **Riesgos Aeronáuticos**: Proxies mejorados de engelamiento (Icing), turbulencia multinivel, cizalladura vertical, convección y visibilidad.
+4. **Análisis de Rutas**: Muestreo meteorológico y de riesgos a lo largo de rutas de gran círculo entre cualquier aeropuerto ICAO/IATA.
 
 La documentacion viva esta en [`docs/README.md`](docs/README.md).
 

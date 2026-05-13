@@ -50,15 +50,28 @@ def generate_route_markdown(route_points: List[RoutePoint], origin_name: str, de
     if "wind_speed_isobaric_ms" in df.columns and not df.wind_speed_isobaric_ms.isnull().all():
         summary.append(f"- **Viento máximo ({level_hpa} hPa):** {df.wind_speed_isobaric_ms.max():.1f} m/s")
     
-    summary.append("\n## Riesgos Aeronáuticos")
+    summary.append("\n## Condicionantes y Riesgos Aeronáuticos")
+    summary.append("> [!NOTE]")
+    summary.append("> Estos campos son diagnósticos exploratorios basados en proxies meteorológicos. No son diagnósticos operacionales.")
+    
     if "icing_mask" in df.columns and not df.icing_mask.isnull().all():
         icing_pct = (df.icing_mask > 0.5).mean() * 100
-        summary.append(f"- **Probabilidad de engelamiento en ruta:** {icing_pct:.1f}% de la trayectoria")
+        summary.append(f"- **Trayectoria con condiciones térmicas favorables a engelamiento:** {icing_pct:.1f}%")
+    
+    if "jet_stream_mask" in df.columns and not df.jet_stream_mask.isnull().all():
+        jet_pct = (df.jet_stream_mask > 0.5).mean() * 100
+        summary.append(f"- **Trayectoria dentro del núcleo del Jet Stream (300hPa):** {jet_pct:.1f}%")
+
     if "convection_proxy" in df.columns and not df.convection_proxy.isnull().all():
         conv_pct = (df.convection_proxy > 0.5).mean() * 100
-        summary.append(f"- **Riesgo convectivo en ruta:** {conv_pct:.1f}% de la trayectoria")
+        summary.append(f"- **Proxy convectivo por intensidad de precipitación:** {conv_pct:.1f}% de la trayectoria")
+    
     if "turbulence_index" in df.columns and not df.turbulence_index.isnull().all():
-        summary.append(f"- **Turbulencia máxima (niveles bajos):** {df.turbulence_index.max():.2f} (índice)")
+        summary.append(f"- **Índice de turbulencia máximo (basado en cizalladura vertical):** {df.turbulence_index.max():.2f}")
+
+    summary.append("\n## Avisos Técnicos")
+    summary.append("- **Referencia de viento:** Vientos relativos a la rejilla (Grid-Relative). No están rotados a coordenadas terrestres.")
+    summary.append("- **Visibilidad:** Si no está disponible en la tabla inferior, el dataset fuente no incluye el diagnóstico AFWA_VIS.")
         
     # Variables no disponibles (P2, P3)
     expected_vars = [
