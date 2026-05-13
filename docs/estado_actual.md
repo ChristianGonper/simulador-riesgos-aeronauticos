@@ -2,85 +2,49 @@
 
 Fecha: 2026-05-13
 
-El simulador ya ejecuta un flujo funcional sobre el archivo real `wrfout_d01_2009-12-16.nc`: normaliza datos WRF, genera mapas meteorologicos, calcula riesgos exploratorios y produce salidas de ruta entre aeropuertos.
+El simulador es funcional y permite el procesamiento completo de salidas WRF para análisis meteorológico y aeronáutico.
 
-## Flujo actual
-
-```powershell
-uv run simulador-wrf normalizar --input wrfout_d01_2009-12-16.nc --output data/processed/wrf_normalizado.nc
-uv run simulador-wrf mapas --input data/processed/wrf_normalizado.nc --output-dir outputs/maps
-uv run simulador-wrf ruta --input data/processed/wrf_normalizado.nc --origin MAD --dest BCN --level 300 --output-dir outputs/routes
-```
-
-## Capacidades implementadas
-
-### Normalizacion WRF
-
-- Validacion de variables WRF obligatorias.
-- Normalizacion de dimensiones a `time`, `y`, `x`, `model_level`.
-- Coordenadas `lat` y `lon`.
-- Presion 3D desde `P + PB`.
-- Temperatura 3D desde temperatura potencial perturbada.
-- Altura geopotencial desde `PH + PHB`.
-- Viento desescalonado a rejilla de masa.
-- Precipitacion total e incremental.
-- Exportacion NetCDF.
-
-### Representacion meteorologica
-
-- Presion a nivel del mar aproximada.
-- Temperatura a 2 m.
-- Precipitacion incremental.
-- Viento a 10 m.
-- Geopotencial en 850 y 500 hPa.
-- Mascara de jet stream.
-- Mapas de riesgos.
-
-### Riesgos aeronauticos
-
-- Cizalladura 10 m-850 hPa.
-- Engelamiento como mascara termica, con humedad solo si existe.
-- Proxy convectivo por precipitacion incremental.
-- Indice exploratorio de turbulencia por cizalladura.
-- Visibilidad solo si existe `AFWA_VIS`; si falta, se declara no disponible.
-
-### Rutas
-
-- Resolucion de aeropuertos por ICAO/IATA.
-- Ruta de gran circulo.
-- Validacion de dominio.
-- Muestreo por vecino mas cercano.
-- Exportacion CSV, Markdown, mapa y perfiles.
-
-## Limitaciones actuales
-
-- La CLI de mapas no genera aun todos los productos obligatorios por defecto: faltan temperatura en 850/500 hPa y viento de 300 hPa como mapa principal.
-- El viento esta desescalonado, pero no rotado a coordenadas terrestres.
-- La SLP es una aproximacion barometrica.
-- Los riesgos son productos docentes exploratorios.
-- La visibilidad no se estima si falta `AFWA_VIS`.
-- El resumen de ruta no muestrea actualmente `jet_stream_mask`.
-
-## Verificacion reciente
-
-Comandos ejecutados:
+## Flujo de Trabajo Recomendado
 
 ```powershell
-uv run pytest
-uv run ruff check .
-uv run simulador-wrf normalizar --input wrfout_d01_2009-12-16.nc --output outputs/review/wrf_real_t0_normalizado.nc --time-index 0 --backend xarray
-uv run simulador-wrf mapas --input outputs/review/wrf_real_t0_normalizado.nc --output-dir outputs/review/maps --time-index 0
-uv run simulador-wrf ruta --input outputs/review/wrf_real_t0_normalizado.nc --origin MAD --dest BCN --output-dir outputs/review/routes --time-index 0 --level 300
+# 1. Normalizar y calcular diagnósticos
+uv run simulador-wrf normalizar --input wrfout_d01_2009-12-16.nc --output outputs/processed.nc
+
+# 2. Generar suite completa de mapas (Meteorología + Riesgos + Estructuras)
+uv run simulador-wrf mapas --input outputs/processed.nc --output-dir outputs/maps
+
+# 3. Analizar perfil vertical (Hodógrafo) en un punto o aeropuerto
+uv run simulador-wrf perfil --airport MAD --input outputs/processed.nc --output outputs/hodografo_mad.png
+
+# 4. Analizar ruta aérea
+uv run simulador-wrf ruta --input outputs/processed.nc --origin MAD --dest BCN --level 300
 ```
 
-Resultado:
+## Capacidades Implementadas
 
-- tests: `14 passed`;
-- lint: sin errores;
-- flujo real reducido: correcto.
+### Representación Meteorológica e Isobarica
+- **Mapas de superficie**: SLP, T2, Viento 10m, Precipitación incremental.
+- **Niveles aeronáuticos**: Interpolación log-lineal a 850, 500 y 300 hPa.
+- **Diagnósticos estructurales**: Detección de centros de presión (A/B), ejes de vaguada/dorsal (500hPa) y gradientes térmicos (850hPa).
 
-Warnings a revisar:
+### Riesgos Aeronáuticos
+- **Engelamiento (Icing)**: Basado en temperatura y humedad relativa (estimada si falta).
+- **Turbulencia**: Índice multinivel basado en cizalladura vertical ponderada.
+- **Jet Stream**: Detección por umbral de velocidad y muestreo en rutas.
+- **Cizalladura y Convección**: Proxies basados en viento y precipitación.
 
-- cambios futuros de `xarray` en defaults de concatenacion;
-- aviso de dimension ilimitada `Time` al exportar datasets de un solo tiempo;
-- posible warning binario de NumPy en el entorno local.
+### Rutas y Perfiles
+- **Ruta de gran círculo**: Muestreo robusto en rejillas 2D (XLAT/XLONG).
+- **Hodógrafos**: Representación de perfiles de viento mediante MetPy.
+
+## Limitaciones Conocidas
+- **Referencia de viento**: Vientos desescalonados pero relativos a la rejilla (Grid-Relative).
+- **Interpretación**: Los productos de riesgo son docentes y exploratorios.
+- **Visibilidad**: Dependiente del diagnóstico AFWA_VIS original.
+
+## Verificación
+- `uv run pytest`: 20 passed.
+- `uv run ruff check .`: Sin errores.
+- Generación de suite de 18+ mapas: Verificada.
+- Flujo CLI real con `wrfout_d01_2009-12-16.nc`: normalización, mapas, hodógrafo y ruta verificados.
+- **Nota sobre warnings**: La suite mantiene un único warning de compatibilidad binaria de NumPy en el entorno Windows local. No procede de la lógica meteorológica del proyecto.
