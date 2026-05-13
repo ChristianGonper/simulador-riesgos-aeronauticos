@@ -136,7 +136,7 @@ def open_wrf_dataset(paths, combine="nested"):
         for ds_item in datasets:
             validate_dataset(ds_item)
             
-        ds = xr.concat(datasets, dim="Time")
+        ds = xr.concat(datasets, dim="Time", data_vars="minimal", coords="minimal", compat="override")
         # Asegurar orden temporal y normalización
         ds = normalize_dataset(ds)
         if "time" in ds.dims:

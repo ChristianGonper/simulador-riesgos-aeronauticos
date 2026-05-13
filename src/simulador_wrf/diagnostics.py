@@ -1,6 +1,7 @@
 import xarray as xr
 import numpy as np
 import logging
+from scipy.ndimage import minimum_filter, maximum_filter
 
 logger = logging.getLogger(__name__)
 
@@ -71,11 +72,19 @@ def calculate_surface_diagnostics(ds: xr.Dataset) -> xr.Dataset:
         ds["u10_ms"] = ds.U10
         ds["v10_ms"] = ds.V10
         ds["wind10_speed_ms"] = (ds.U10**2 + ds.V10**2)**0.5
-        ds["wind10_speed_ms"].attrs = {"units": "m s-1", "long_name": "10m Wind Speed"}
+        ds["wind10_speed_ms"].attrs = {
+            "units": "m s-1", 
+            "long_name": "10m Wind Speed",
+            "wind_reference": "grid_relative"
+        }
         
         # Dirección del viento (de dónde viene)
         ds["wind10_dir_deg"] = (np.arctan2(ds.U10, ds.V10) * 180 / np.pi + 180) % 360
-        ds["wind10_dir_deg"].attrs = {"units": "degree", "long_name": "10m Wind Direction"}
+        ds["wind10_dir_deg"].attrs = {
+            "units": "degree", 
+            "long_name": "10m Wind Direction",
+            "wind_reference": "grid_relative"
+        }
 
     return ds
 
@@ -131,7 +140,7 @@ def interpolate_to_pressure(ds: xr.Dataset, var_name: str, levels_hpa: list) -> 
         interp_val = interp_val.assign_coords(level_hpa=level)
         interpolated_levels.append(interp_val)
         
-    return xr.concat(interpolated_levels, dim="level_hpa")
+    return xr.concat(interpolated_levels, dim="level_hpa", coords="minimal", compat="override")
 
 def detect_jet_stream(wind_speed: xr.DataArray, threshold: float = 30.0) -> xr.DataArray:
     """
@@ -167,6 +176,10 @@ def calculate_wind_shear(ds: xr.Dataset) -> xr.Dataset:
             logger.warning("Faltan vientos isobaricos para calcular cizalladura.")
             return ds
 
+    if 850.0 not in ds.u_isobaric_ms.level_hpa.values:
+        logger.warning("Nivel 850 hPa no disponible para cizalladura.")
+        return ds
+
     u850 = ds.u_isobaric_ms.sel(level_hpa=850.0)
     v850 = ds.v_isobaric_ms.sel(level_hpa=850.0)
     
@@ -185,17 +198,15 @@ def calculate_wind_shear(ds: xr.Dataset) -> xr.Dataset:
 
 def calculate_icing_risk(ds: xr.Dataset) -> xr.Dataset:
     """
-    Calcula la máscara de engelamiento (icing) basada en temperatura.
+    Calcula la máscara de condiciones favorables para engelamiento (icing).
     Favorable entre 0 y -20 degC. 
-    Si hay humedad relativa (RH), se podría refinar (e.g. RH > 80%).
+    Se ajusta el lenguaje a "proxy de condiciones favorables" para evitar falsas expectativas operacionales.
     """
-    if "t2_c" not in ds:
-        logger.warning("Falta t2_c para calcular icing_mask en superficie.")
+    if "t2_c" not in ds and "t_isobaric_c" not in ds:
+        logger.warning("Faltan datos de temperatura para calcular icing_mask.")
         return ds
         
-    # Por ahora usamos t2_c como ejemplo, pero lo ideal es 3D o niveles bajos
-    # Si tenemos temperatura isobarica a 850, es más representativo para aviación general
-    t_ref = None
+    # Preferimos 850 hPa para aviación, si no 2m
     if "t_isobaric_c" in ds and 850.0 in ds.t_isobaric_c.level_hpa:
         t_ref = ds.t_isobaric_c.sel(level_hpa=850.0)
         name_ref = "850hPa Temperature"
@@ -203,24 +214,46 @@ def calculate_icing_risk(ds: xr.Dataset) -> xr.Dataset:
         t_ref = ds.t2_c
         name_ref = "2m Temperature"
         
+    # Máscara térmica base
     icing_mask = (t_ref <= 0) & (t_ref >= -20)
     
-    # Si tenemos RH en el dataset (podría venir de la normalización)
+    # Intentar refinar con Humedad Relativa si está disponible
+    rh_info = ""
     if "rh_isobaric" in ds and 850.0 in ds.rh_isobaric.level_hpa:
         rh_ref = ds.rh_isobaric.sel(level_hpa=850.0)
         icing_mask = icing_mask & (rh_ref > 80)
-        desc = f"Icing probability based on {name_ref} (0 to -20C) and RH850 > 80%"
-    else:
-        desc = f"Thermal icing mask based on {name_ref} (0 to -20C)"
+        rh_info = " and RH850 > 80%"
+    elif "QVAPOR" in ds and "pressure_hpa" in ds and "temperature_c" in ds:
+        # Cálculo simplificado de RH si tenemos QVAPOR
+        try:
+            # Aproximación rápida para RH
+            pres_pa = ds.pressure_hpa * 100.0
+            qv = ds.QVAPOR
+            
+            # Presión de vapor de saturación (Tetens)
+            # Asegurar rango térmico para evitar overflow en np.exp
+            t_clipped = ds.temperature_c.clip(-100, 50)
+            es = 611.2 * np.exp(17.67 * t_clipped / (t_clipped + 243.5))
+            # Razón de mezcla de saturación
+            ws = 0.622 * es / (pres_pa - es)
+            rh = (qv / ws) * 100.0
+            
+            # Interpolar RH a 850 si es posible
+            if "level_hpa" in ds:
+                rh_850 = interpolate_to_pressure(ds.assign(rh_calc=rh), "rh_calc", [850.0]).sel(level_hpa=850.0)
+                icing_mask = icing_mask & (rh_850 > 80)
+                rh_info = " and calculated RH850 > 80%"
+        except Exception as e:
+            logger.debug(f"No se pudo refinar icing con RH: {e}")
 
     icing_mask.attrs = {
         "units": "1",
-        "long_name": "Icing Risk Mask",
-        "description": desc,
-        "method": "0 >= T >= -20",
-        "source_variables": "t_isobaric_c (850hPa) o t2_c, rh_isobaric (opcional)",
-        "scientific_interpretation": "Zonas termodinámicamente favorables para la presencia de agua subfundida y formación de hielo en aeronaves.",
-        "limitations": "No garantiza la presencia de hielo, solo condiciones favorables. Ignora microfísica de nubes detallada."
+        "long_name": "Icing Favorable Conditions Proxy",
+        "description": f"Thermal icing proxy based on {name_ref} (0 to -20C){rh_info}",
+        "method": "0 >= T >= -20 (plus RH > 80% if available)",
+        "source_variables": "t_isobaric_c (850hPa) o t2_c, QVAPOR (opcional)",
+        "scientific_interpretation": "Zonas termodinámicamente favorables para la formación de hielo en aeronaves. Producto docente, no operacional.",
+        "limitations": "No garantiza la presencia de hielo. No considera microfísica de nubes."
     }
     ds["icing_mask"] = icing_mask.astype(float)
     return ds
@@ -248,30 +281,46 @@ def calculate_convection_proxy(ds: xr.Dataset, threshold: float = 5.0) -> xr.Dat
 
 def calculate_turbulence_index(ds: xr.Dataset) -> xr.Dataset:
     """
-    Índice de turbulencia exploratorio basado en cizalladura vertical.
-    En una fase avanzada se añadiría deformación horizontal.
+    Índice de turbulencia exploratorio basado en cizalladura vertical en varias capas.
     """
+    if "u_isobaric_ms" not in ds or "v_isobaric_ms" not in ds:
+        logger.warning("Faltan vientos isobaricos para calcular turbulencia multinivel.")
+        return ds
+    
+    # 1. Cizalladura capas bajas (10m - 850hPa)
     if "wind_shear_10m_850_ms" not in ds:
         ds = calculate_wind_shear(ds)
+    
+    shear_low = ds.get("wind_shear_10m_850_ms", 0.0)
+    
+    # 2. Cizalladura capas medias (850 - 500 hPa)
+    shear_mid = 0.0
+    if all(lev in ds.level_hpa for lev in [850, 500]):
+        u850, v850 = ds.u_isobaric_ms.sel(level_hpa=850), ds.v_isobaric_ms.sel(level_hpa=850)
+        u500, v500 = ds.u_isobaric_ms.sel(level_hpa=500), ds.v_isobaric_ms.sel(level_hpa=500)
+        shear_mid = ((u500 - u850)**2 + (v500 - v850)**2)**0.5
         
-    if "wind_shear_10m_850_ms" in ds:
-        # Simplificación: usamos la cizalladura como proxy de turbulencia en niveles bajos.
-        # El divisor (10.0) es un factor de escala para llevar el índice a un rango típico [0, 1].
-        # Se basa en el criterio docente de que 10 m/s de cizalladura en la capa es un valor significativo.
-        norm_factor = 10.0
-        turb = ds.wind_shear_10m_850_ms / norm_factor
-        turb.attrs = {
-            "units": "index",
-            "long_name": "Exploratory Turbulence Index",
-            "description": "Low-level turbulence proxy based on 10m-850hPa wind shear",
-            "warning": "Exploratory product, not for operational use",
-            "method": f"wind_shear / {norm_factor}",
-            "source_variables": "wind_shear_10m_850_ms",
-            "scientific_interpretation": "Estimación cinemática de la turbulencia en capas bajas provocada por cizalladura vertical intensa.",
-            "limitations": "Ignora deformación horizontal, estabilidad estática y turbulencia en aire claro (CAT) de niveles altos."
-        }
-        ds["turbulence_index"] = turb
-        
+    # 3. Cizalladura capas altas (500 - 300 hPa)
+    shear_high = 0.0
+    if all(lev in ds.level_hpa for lev in [500, 300]):
+        u500, v500 = ds.u_isobaric_ms.sel(level_hpa=500), ds.v_isobaric_ms.sel(level_hpa=500)
+        u300, v300 = ds.u_isobaric_ms.sel(level_hpa=300), ds.v_isobaric_ms.sel(level_hpa=300)
+        shear_high = ((u300 - u500)**2 + (v300 - v500)**2)**0.5
+
+    # Índice combinado ponderado (priorizando capas bajas y altas)
+    turb = (shear_low * 0.5 + shear_mid * 0.2 + shear_high * 0.3) / 10.0
+    
+    turb.attrs = {
+        "units": "index",
+        "long_name": "Multi-level Exploratory Turbulence Proxy",
+        "description": "Turbulence proxy based on vertical wind shear at 10-850, 850-500 and 500-300 hPa",
+        "warning": "EXPLORATORY PRODUCT - NOT FOR OPERATIONAL USE",
+        "method": "Weighted average of vertical shears / 10",
+        "source_variables": "u/v_isobaric_ms, u10/v10_ms",
+        "scientific_interpretation": "Estimación de turbulencia por cizalladura vertical. Valores > 1.0 indican condiciones severas potenciales.",
+        "limitations": "No considera turbulencia térmica, de montaña ni deformación horizontal."
+    }
+    ds["turbulence_index"] = turb
     return ds
 
 def add_aviation_risk_fields(ds: xr.Dataset) -> xr.Dataset:
@@ -312,4 +361,141 @@ def add_aviation_risk_fields(ds: xr.Dataset) -> xr.Dataset:
         }
         ds["visibility_m"] = dummy_vis
         
+    return ds
+
+# --- NUEVOS DIAGNÓSTICOS ESTRUCTURALES ---
+
+def detect_pressure_centers(ds: xr.Dataset, neighborhood_size: int = 20) -> xr.Dataset:
+    """
+    Detecta centros de baja (B) y alta (A) presión en SLP.
+    neighborhood_size controla la escala de los centros detectados.
+    """
+    if "slp_hpa" not in ds:
+        return ds
+        
+    slp = ds.slp_hpa
+    
+    def find_extrema(data_2d, size, mode="min"):
+        if mode == "min":
+            filtered = minimum_filter(data_2d, size=size)
+            extrema = (data_2d == filtered)
+        else:
+            filtered = maximum_filter(data_2d, size=size)
+            extrema = (data_2d == filtered)
+        return extrema
+
+    lows_mask = xr.apply_ufunc(
+        find_extrema, slp, 
+        input_core_dims=[["y", "x"]], output_core_dims=[["y", "x"]],
+        kwargs={"size": neighborhood_size, "mode": "min"},
+        vectorize=True, dask="parallelized"
+    )
+    
+    highs_mask = xr.apply_ufunc(
+        find_extrema, slp, 
+        input_core_dims=[["y", "x"]], output_core_dims=[["y", "x"]],
+        kwargs={"size": neighborhood_size, "mode": "max"},
+        vectorize=True, dask="parallelized"
+    )
+    
+    ds["low_centers_mask"] = lows_mask.astype(float)
+    ds["high_centers_mask"] = highs_mask.astype(float)
+    
+    ds["low_centers_mask"].attrs = {
+        "long_name": "Low Pressure Centers (B)", 
+        "units": "mask (0 or 1)",
+        "description": "Exploratory detection of local SLP minima",
+        "method": f"Local minimum filter with neighborhood_size={neighborhood_size}",
+        "source_variables": "slp_hpa",
+        "scientific_interpretation": "Identifica núcleos de baja presión (borrascas o bajas térmicas) basados en mínimos locales de SLP.",
+        "limitations": "La detección depende del neighborhood_size. Puede detectar bajas insignificantes si el umbral no es estricto.",
+        "warning": "EXPLORATORY PRODUCT"
+    }
+    ds["high_centers_mask"].attrs = {
+        "long_name": "High Pressure Centers (A)", 
+        "units": "mask (0 or 1)",
+        "description": "Exploratory detection of local SLP maxima",
+        "method": f"Local maximum filter with neighborhood_size={neighborhood_size}",
+        "source_variables": "slp_hpa",
+        "scientific_interpretation": "Identifica centros de alta presión (anticiclones) basados en máximos locales de SLP.",
+        "limitations": "La detección depende del neighborhood_size. Sensible a ruido en el campo de presión.",
+        "warning": "EXPLORATORY PRODUCT"
+    }
+    
+    return ds
+
+def detect_troughs_ridges(ds: xr.Dataset, level: float = 500.0) -> xr.Dataset:
+    """
+    Identifica áreas potenciales de vaguadas y dorsales basadas en la curvatura del geopotencial.
+    """
+    if "gh_isobaric_m" not in ds or level not in ds.level_hpa:
+        return ds
+        
+    gh = ds.gh_isobaric_m.sel(level_hpa=level)
+    
+    # Calcular Laplaciano (curvatura) como proxy simple
+    # En una rejilla regular, esto es d2z/dx2 + d2z/dy2
+    # Usamos np.gradient dos veces
+    
+    def calculate_curvature(data_2d):
+        gy, gx = np.gradient(data_2d)
+        gyy, gxy = np.gradient(gy)
+        gyx, gxx = np.gradient(gx)
+        return gxx + gyy
+
+    curvature = xr.apply_ufunc(
+        calculate_curvature, gh,
+        input_core_dims=[["y", "x"]], output_core_dims=[["y", "x"]],
+        vectorize=True, dask="parallelized"
+    )
+    
+    # Vaguadas (Troughs): Curvatura positiva (ciclónica en NH)
+    # Dorsales (Ridges): Curvatura negativa (anticiclónica en NH)
+    # Nota: esto es una simplificación extrema
+    
+    ds[f"trough_ridge_index_{int(level)}"] = curvature
+    ds[f"trough_ridge_index_{int(level)}"].attrs = {
+        "long_name": f"Trough/Ridge Curvature Index ({level}hPa)",
+        "units": "m / grid_cell^2",
+        "description": "Laplacian of geopotential height. Positive values indicate cyclonic curvature (troughs).",
+        "method": "Discrete Laplacian (d2z/dx2 + d2z/dy2) using np.gradient",
+        "source_variables": "gh_isobaric_m",
+        "scientific_interpretation": "Mide la curvatura del campo de geopotencial. Valores positivos (NH) indican vaguadas o depresiones en altura; negativos indican dorsales.",
+        "limitations": "Calculado en espacio de rejilla (no físico). No considera la convergencia de meridianos ni la deformación por latitud.",
+        "warning": "EXPLORATORY PRODUCT"
+    }
+    
+    return ds
+
+def calculate_temperature_gradient(ds: xr.Dataset, level: float = 850.0) -> xr.Dataset:
+    """
+    Calcula el gradiente horizontal de temperatura para identificar zonas baroclínicas.
+    """
+    if "t_isobaric_c" not in ds or level not in ds.level_hpa:
+        return ds
+        
+    t = ds.t_isobaric_c.sel(level_hpa=level)
+    
+    def horizontal_gradient(data_2d):
+        gy, gx = np.gradient(data_2d)
+        return np.sqrt(gx**2 + gy**2)
+
+    grad = xr.apply_ufunc(
+        horizontal_gradient, t,
+        input_core_dims=[["y", "x"]], output_core_dims=[["y", "x"]],
+        vectorize=True, dask="parallelized"
+    )
+    
+    ds[f"t_gradient_{int(level)}_index"] = grad
+    ds[f"t_gradient_{int(level)}_index"].attrs = {
+        "long_name": f"Temperature Horizontal Gradient ({level}hPa)",
+        "units": "degC / grid_cell",
+        "description": "Magnitude of horizontal temperature gradient. Higher values indicate baroclinic zones.",
+        "method": "Magnitude of 2D gradient using np.gradient",
+        "source_variables": "t_isobaric_c",
+        "scientific_interpretation": "Identifica zonas de transición entre masas de aire (frentes), fundamentales para la ciclogénesis y frontogénesis.",
+        "limitations": "Dependiente de la resolución de rejilla (DX, DY). El valor absoluto varía según la distancia entre puntos de malla.",
+        "warning": "EXPLORATORY PRODUCT"
+    }
+    
     return ds
